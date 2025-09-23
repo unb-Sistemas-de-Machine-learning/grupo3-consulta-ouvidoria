@@ -5,8 +5,7 @@ site_name: Assistente de Consultas da Ouvidoria
 nav:
   - Home: index.md
   - Entrega 1:
-      - 1:
-          - 1: entrega1/1.md
+    - 1: entrega1/1.md
     
 theme:
   name: material
