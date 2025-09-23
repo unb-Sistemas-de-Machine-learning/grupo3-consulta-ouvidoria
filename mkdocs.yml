@@ -7,10 +7,6 @@ nav:
   - Entrega 1:
       - 1:
           - 1: entrega1/1.md
-      - 2:
-          - 2: entrega1/2.md
-      - 3:
-          - 3: entrega1/3.md
     
 theme:
   name: material
@@ -37,4 +33,3 @@ theme:
         icon: material/weather-cloudy-alert
         name: Switch to high contrast
   logo: images/ouvidoria.png
-  extra_css: [stylesheets/extra.css]
