@@ -1,9 +1,7 @@
-site_name: Assistente de Consultas da Ouvidoria - Grupo 3
-repo_name: grupo3-consulta-ouvidoria
 repo_url: https://github.com/unb-Sistemas-de-Machine-learning/grupo3-consulta-ouvidoria
+repo_name: grupo3-consulta-ouvidoria
+site_name: Assistente de Consultas da Ouvidoria
 
-strict: true
-use_directory_urls: true
 nav:
   - Home: index.md
   - Entrega 1:
@@ -13,84 +11,30 @@ nav:
           - 2: entrega1/2.md
       - 3:
           - 3: entrega1/3.md
-
-markdown_extensions:
-  - markdown.extensions.admonition:
-  - markdown.extensions.codehilite:
-      guess_lang: false
-  - markdown.extensions.toc:
-      permalink: true
-  - abbr
-  - admonition
-  - attr_list
-  - def_list
-  - footnotes
-  - md_in_html
-  - tables
-  - pymdownx.arithmatex:
-      generic: true
-  - pymdownx.betterem:
-  - pymdownx.caret:
-  - pymdownx.details:
-  - pymdownx.snippets:
-  - pymdownx.superfences:
-  - pymdownx.tasklist:
-      custom_checkbox: true
-  - pymdownx.tilde:
-
+    
 theme:
-  name: 'material'
-  #logo: assets/logo.png
-  #favicon: assets/favicon.ico
-  palette:
-    - scheme: default
-      primary: teal
-      accent: green
-      toggle:
-        icon: material/weather-night
-        name: Dark mode
-    - scheme: slate
-      primary: teal
-      accent: green
-      toggle:
-        icon: material/weather-sunny
-        name: Light mode
-  font:
-    text: 'Roboto'
-    code: 'Roboto Mono'
-  language: 'pt-BR'
+  name: material
+  language: pt-BR
   features:
-    - search.suggest
-    - search.highlight
-    - content.tabs.link
-    - content.code.copy
-    - toc.integrate
-    - toc.collapse
-    - toc.follow
     - navigation.tabs
     - navigation.tabs.sticky
-    - navigation.expand
-    - navigation.instant
-    - navigation.instant.preview
-    - navigation.instant.progress
-    - navigation.instant.prefetch
-    - navigation.top
-    - navigation.tracking
-    - navigation.sections
-    - navigation.indexes
-    - navigation.path
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7 
+        name: Switch to dark mode
+      primary: blue
 
-extra_css: 
-  - assets/stylesheets/styles.css
-
-extra_javascript:
-  - https://polyfill.io/v3/polyfill.min.js?features=es6
-  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
-
-extra:
-  analytics:
-    provider: google
-    property: UA-XXXXX-Y
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/unb-Sistemas-de-Machine-learning/grupo3-consulta-ouvidoria
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+      primary: green
+    - scheme: high-contrast
+      primary: black
+      accent: yellow
+      toggle:
+        icon: material/weather-cloudy-alert
+        name: Switch to high contrast
+  logo: images/ouvidoria.png
+  extra_css: [stylesheets/extra.css]
