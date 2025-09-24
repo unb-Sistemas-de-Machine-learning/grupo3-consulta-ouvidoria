@@ -1,4 +1,4 @@
-# Grupo 3 - Assistente de Consultas da Ouvidoria
+# Assistente de Consultas da Ouvidoria
 
 Repositório do grupo 3
 
