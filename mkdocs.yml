@@ -6,8 +6,8 @@ nav:
   - Home: index.md
   - Entrega 1:
     - Descoberta: entrega1/descoberta.md
-    - Requisitos: entrega1/requisitos.md
     - ML Canva: entrega1/mlcanva.md
+    #- Requisitos: entrega1/requisitos.md
     
 theme:
   name: material
