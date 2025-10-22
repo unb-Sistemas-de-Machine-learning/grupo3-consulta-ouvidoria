@@ -9,8 +9,8 @@ repo_name: grupo3-consulta-ouvidoria
 
 nav:
   - Home: index.md
-  #- Cronograma:
-  #  - Cronograma: cronograma.md
+  - Cronograma:
+    - Cronograma: cronograma.md
   - Engenharia de Requisitos:
     - Descoberta: Elicitação/descoberta.md
     - ML Canva: Elicitação/mlcanva.md
