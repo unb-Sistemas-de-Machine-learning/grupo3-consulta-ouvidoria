@@ -9,12 +9,17 @@ repo_name: grupo3-consulta-ouvidoria
 
 nav:
   - Home: index.md
-  - Elicitação:
+  #- Cronograma:
+  #  - Cronograma: cronograma.md
+  - Engenharia de Requisitos:
     - Descoberta: Elicitação/descoberta.md
     - ML Canva: Elicitação/mlcanva.md
     - Requisitos: Elicitação/requisitos.md
     - Histórias de Usuário (US): Elicitação/historias-de-usuario.md
     - Priorização das US: Elicitação/priorizacao-us.md
+  #- Engenharia de Dados:
+  #  - Arquitetura: Dados/arquitetura.md
+  #  - Coleta e Armazenamento de Dados: Dados/dados.md
     
 theme:
   name: material
