@@ -9,7 +9,7 @@ repo_name: grupo3-consulta-ouvidoria
 
 nav:
   - Home: index.md
-  - Elicitação:
+  - Engenharia de Requisitos:
     - Descoberta: Elicitação/descoberta.md
     - ML Canva: Elicitação/mlcanva.md
     - Requisitos: Elicitação/requisitos.md
