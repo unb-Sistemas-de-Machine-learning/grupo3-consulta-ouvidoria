@@ -15,6 +15,7 @@ nav:
     - Requisitos: Elicitação/requisitos.md
     - Histórias de Usuário (US): Elicitação/historias-de-usuario.md
     - Priorização das US: Elicitação/priorizacao-us.md
+    - Cronograma: Elicitação/cronograma.md
     
 theme:
   name: material
