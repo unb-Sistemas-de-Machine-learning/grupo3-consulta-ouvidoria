@@ -9,10 +9,12 @@ repo_name: grupo3-consulta-ouvidoria
 
 nav:
   - Home: index.md
-  - Entrega 1:
-    - Descoberta: entrega1/descoberta.md
-    - ML Canva: entrega1/mlcanva.md
-    #- Requisitos: entrega1/requisitos.md
+  - Elicitação:
+    - Descoberta: Elicitação/descoberta.md
+    - ML Canva: Elicitação/mlcanva.md
+    - Requisitos: Elicitação/requisitos.md
+    - Histórias de Usuário (US): Elicitação/historias-de-usuario.md
+    - Priorização das US: Elicitação/priorizacao-us.md
     
 theme:
   name: material

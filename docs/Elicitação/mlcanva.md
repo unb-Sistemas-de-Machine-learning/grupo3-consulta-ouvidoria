@@ -2,12 +2,13 @@
 
 ## Modelo Machine Learning Canva (ML Canva)
 
-![template do ML Canva](../images/mlcanva1.png)
+O **Machine Learning Canva (ML Canva)** é um framework de planejamento estratégico que serve como um mapa para o desenvolvimento de produtos baseados em Inteligência Artificial. Adotamos esta ferramenta para estruturar o projeto OuvidorIA, garantindo que a proposta de valor para o cidadão e para o governo estivesse diretamente conectada às nossas decisões técnicas sobre dados, modelagem e operação. O canvas se organiza em blocos que cobrem todo o ciclo de vida do projeto, desde a concepção até a manutenção. O template do quadro, em seu formato visual, está disponível abaixo com a descrição dos campos.
+
+![Template do ML Canva](../images/mlcanva1.png)
 
 ## ML Canva do projeto
 
 <iframe width="768" height="496" src="https://miro.com/app/live-embed/uXjVJJvF1JQ=/?focusWidget=3458764641421623085&embedMode=view_only_without_ui&embedId=974876117786" frameborder="0" scrolling="no" allow="fullscreen; clipboard-read; clipboard-write" allowfullscreen></iframe>
-
 
 Você também pode acessar o [Canva do projeto aqui](https://miro.com/app/board/uXjVJJvF1JQ=/?moveToWidget=3458764641421623085&cot=14)
 
@@ -18,7 +19,7 @@ Você também pode acessar o [Canva do projeto aqui](https://miro.com/app/board/
 
 *Chatbot:*
 
-O usuario, que deseja realizar manifestações na plataforma fala.BR, terá acesso a um chatbot de ouvidoria que funciona como uma interface de comunicação. O sistema irá entender as necessidades e explicar informações relacionadas a procedimentos de ouvidoria, direitos e manifestações, além de auxiliar na construção de manifestações qualificadas em uma linguagem simplificada.  Dessa forma, o cidadão estará capacitado para usufruir da plataforma e informado sobre seus direitos e o funcionamento dos serviços de Ouvidoria, sem a necessidade da procura manual nos documentos governamentais ou manuais do Fala.BR.
+O usuario, que deseja realizar manifestações na plataforma fala.BR, terá acesso a um chatbot de ouvidoria que funciona como uma interface de comunicação. O sistema irá entender as necessidades e explicar informações relacionadas a procedimentos de ouvidoria, direitos e manifestações, além de auxiliar na construção de manifestações qualificadas em uma linguagem simplificada. Dessa forma, o cidadão estará capacitado para usufruir da plataforma e informado sobre seus direitos e o funcionamento dos serviços de Ouvidoria, sem a necessidade da procura manual nos documentos governamentais ou manuais do Fala.BR.
 
 Fluxo de trabalho do chatbot:  
 

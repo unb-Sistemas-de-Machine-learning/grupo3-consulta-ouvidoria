@@ -1,9 +1,0 @@
-# Requisitos
-
-## Funcionalidades
-
-
-## Priorização
-
-
-## MVP

@@ -1,6 +1,14 @@
-# Assistente de Consultas da Ouvidoria
+# OuvidorIA
 
-Repositório do grupo 3
+Bem-vindo ao repositório do OuvidorIA, um assistente virtual inteligente projetado para simplificar e fortalecer a comunicação entre o cidadão e as ouvidorias públicas no Brasil.
+
+## O Problema
+
+Muitas vezes, o processo de registrar uma manifestação (como uma denúncia ou reclamação) pode ser complexo e burocrático. A linguagem técnica dos manuais e a dificuldade em formular um texto claro podem desestimular a participação cidadã de uma ferramenta essencial para a melhoria dos serviços públicos.
+
+## Nossa Solução
+
+O OuvidorIA surge como uma solução para este desafio. Utilizando Inteligência Artificial e Processamento de Linguagem Natural, nossa plataforma atua como uma ponte, oferecendo ao cidadão as ferramentas necessárias para se expressar de forma clara e eficaz, ao mesmo tempo que traduz essas informações para a gestão pública, se tornando uma via de mão dupla onde a participação cidadã gera melhorias diretas nos serviços.
 
 ## Equipe
 
