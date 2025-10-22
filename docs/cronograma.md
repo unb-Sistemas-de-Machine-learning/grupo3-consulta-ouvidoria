@@ -1,6 +1,8 @@
 # Cronograma
 
-| Semana | Período        | Etapa / Fase Principal              | Atividades Desenvolvidas / Planejadas                                                                 |
+Este cronograma apresenta as atividades previstas/realizadas a partir da primeira semana (10/09) até a entrega do primiero ponto de controle (20/10).
+
+| Semana | Período        | Etapa / Fase Principal              | Atividades Previstas / Realizadas                                                                |
 |---------|----------------|------------------------------------|--------------------------------------------------------------------------------------------------------|
 | **1** | 10/09 – 15/09 | **Visão do produto** | Entendimento em equipe sobre o projeto e sobre o produto. |
 | **2** | 16/09 – 22/09 | **Fishbone e ML Canva** | Desenvolvimento dos artefatos Fishbone Diagram, Canva de ideias, Filtro de ideias e ML canva. |
