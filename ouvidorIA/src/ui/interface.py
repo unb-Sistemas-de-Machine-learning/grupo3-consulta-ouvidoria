@@ -21,9 +21,10 @@ class OuvidoriaUI:
         
         defaults = {
             "form_esfera": "Federal",
-            "chat_open": False,
+            "chat_open": True,  # Chat inicia aberto
             "pending_suggestion": None,  # Armazena sugestão antes de widgets serem criados
-            "apply_suggestion": False    # Flag para aplicar sugestão
+            "apply_suggestion": False,   # Flag para aplicar sugestão
+            "processing_message": False  # Flag para evitar processamento duplicado
         }
         for key, value in defaults.items():
             if key not in st.session_state:
@@ -45,6 +46,19 @@ class OuvidoriaUI:
 
     def toggle_chat(self):
         st.session_state.chat_open = not st.session_state.chat_open
+    
+    def _map_organ_to_subject(self, orgao: str) -> str:
+        """Mapeia órgão para assunto correspondente."""
+        orgao_lower = orgao.lower()
+        
+        if "saúde" in orgao_lower or "saude" in orgao_lower:
+            return "Saúde"
+        elif "educação" in orgao_lower or "educacao" in orgao_lower:
+            return "Educação"
+        elif "polícia" in orgao_lower or "policia" in orgao_lower or "segurança" in orgao_lower:
+            return "Segurança"
+        else:
+            return ""
 
     def render_form_header(self):
         st.markdown("""
@@ -61,32 +75,53 @@ class OuvidoriaUI:
         # Verifica se deve aplicar sugestão
         if st.session_state.apply_suggestion and st.session_state.pending_suggestion:
             sug = st.session_state.pending_suggestion
+            default_esfera = sug.get("esfera", "Federal")
             default_orgao = sug.get("orgao", "")
+            default_assunto = sug.get("assunto", "")
             default_resumo = sug.get("resumo", "")
             default_conteudo = sug.get("conteudo", "")
             st.session_state.apply_suggestion = False  # Reset flag
             st.success("✅ Formulário preenchido com sugestões do assistente!")
         else:
+            default_esfera = "Federal"
             default_orgao = ""
+            default_assunto = ""
             default_resumo = ""
             default_conteudo = ""
         
         st.markdown('<div class="form-section-title">Destinatário</div>', unsafe_allow_html=True)
         col1, col2 = st.columns([1, 2])
         with col1:
-            st.selectbox("Esfera", ["Federal", "Estadual", "Municipal"], key="form_esfera")
+            esferas = ["Federal", "Estadual", "Municipal"]
+            esfera_index = esferas.index(default_esfera) if default_esfera in esferas else 0
+            st.selectbox("Esfera", esferas, index=esfera_index)
         
         orgaos = ["", "Ministério da Saúde (MS)", "Ministério da Educação (MEC)", "Controladoria-Geral da União (CGU)", "Instituto Nacional do Seguro Social (INSS)", "Polícia Federal (PF)", "Receita Federal (RFB)"]
         
-        # Define índice do órgão
+        # Define índice do órgão (busca exata ou parcial)
         orgao_index = 0
-        if default_orgao in orgaos:
-            orgao_index = orgaos.index(default_orgao)
+        if default_orgao:
+            # Tenta match exato primeiro
+            if default_orgao in orgaos:
+                orgao_index = orgaos.index(default_orgao)
+            else:
+                # Busca parcial (case insensitive)
+                default_lower = default_orgao.lower()
+                for i, orgao in enumerate(orgaos):
+                    if orgao and (default_lower in orgao.lower() or orgao.lower() in default_lower):
+                        orgao_index = i
+                        break
         
         st.selectbox("Órgão destinatário", options=orgaos, index=orgao_index)
 
         st.markdown('<div class="form-section-title">Descrição</div>', unsafe_allow_html=True)
-        st.selectbox("Sobre qual assunto você quer falar?", options=["", "Saúde", "Educação", "Segurança", "Transporte"], key="form_assunto")
+        
+        assuntos = ["", "Saúde", "Educação", "Segurança", "Transporte"]
+        assunto_index = 0
+        if default_assunto and default_assunto in assuntos:
+            assunto_index = assuntos.index(default_assunto)
+        
+        st.selectbox("Sobre qual assunto você quer falar?", options=assuntos, index=assunto_index)
         st.text_input("Resumo", placeholder="Digite um breve resumo", value=default_resumo)
         st.text_area("Fale aqui", height=250, placeholder="Descreva o conteúdo do pedido...", value=default_conteudo)
 
@@ -130,12 +165,19 @@ class OuvidoriaUI:
                         
                         # Se o tipo for CHAT, não mostramos o widget de preenchimento
                         if sug and tipo != "CHAT":
+                            # Determina assunto e esfera baseado no órgão
+                            orgao = sug.get("orgao", "")
+                            assunto = self._map_organ_to_subject(orgao)
+                            esfera = "Federal"  # Todos os órgãos listados são federais
+                            
                             with st.status(f"📝 Sugestão: {tipo}", expanded=True):
                                 st.write(f"**Tipo:** {tipo}")
-                                st.write(f"**Órgão:** {sug.get('orgao', 'N/A')}")
-                                st.write(f"**Resumo:** {tipo} sobre {sug.get('orgao', '')}")
+                                st.write(f"**Esfera:** {esfera}")
+                                st.write(f"**Órgão:** {orgao if orgao else 'N/A'}")
+                                st.write(f"**Assunto:** {assunto if assunto else 'N/A'}")
+                                st.write(f"**Resumo:** {sug.get('resumo', tipo + ' - ' + orgao)}")
                                 
-                                st.markdown("**Descrição técnica:**")
+                                st.markdown("**Fundamentação:**")
                                 st.text_area(
                                     "texto_sugestao", 
                                     value=sug.get("resumo_qualificado", ""), 
@@ -148,19 +190,28 @@ class OuvidoriaUI:
                                 if st.button("Preencher Formulário", key=f"btn_{msg.get('id', 0)}", type="primary"):
                                     # Armazena sugestão e ativa flag
                                     st.session_state.pending_suggestion = {
-                                        "orgao": sug.get("orgao", ""),
-                                        "resumo": f"{tipo} sobre {sug.get('orgao', '')}",
+                                        "esfera": esfera,
+                                        "orgao": orgao,
+                                        "assunto": assunto,
+                                        "resumo": sug.get("resumo", f"{tipo} - {orgao}"),
                                         "conteudo": sug.get("resumo_qualificado", "")
                                     }
                                     st.session_state.apply_suggestion = True
+                                    st.session_state.processing_message = False  # Reset flag
                                     st.rerun()
 
         if prompt := st.chat_input("Ex: Não consigo meu remédio no posto..."):
             st.session_state.messages.append({"role": "user", "content": prompt, "id": len(st.session_state.messages)})
+            st.session_state.processing_message = True
             st.rerun()
 
     def process_new_message(self, rag_service):
+        # Só processa se a flag estiver ativa e última mensagem for do usuário
+        if not st.session_state.get("processing_message", False):
+            return
+        
         if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+            st.session_state.processing_message = False  # Desativa a flag imediatamente
             last_msg = st.session_state.messages[-1]["content"]
             with st.spinner("OuvidorIA pensando..."):
                 try:

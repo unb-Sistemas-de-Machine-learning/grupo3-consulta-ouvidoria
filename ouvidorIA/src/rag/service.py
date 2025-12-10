@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import re
 import qdrant_client
 from llama_index.core import VectorStoreIndex, Settings, StorageContext
 from llama_index.vector_stores.qdrant import QdrantVectorStore
@@ -140,8 +141,7 @@ class OuvidoriaRAGService:
 
     def analyze_demand(self, user_text: str):
         """
-        Roteador Inteligente com RAG:
-        Usa a base de conhecimento (PDFs da ouvidoria) para analisar a demanda.
+        Análise em múltiplas etapas para melhor qualidade com modelos pequenos.
         """
         if not self.llm_ready:
             self.connect_ollama()
@@ -149,61 +149,194 @@ class OuvidoriaRAGService:
         if not self.query_engine:
             raise ValueError("Query engine não inicializado. Execute ingest_and_index() primeiro.")
 
-        # Prompt simplificado para modelos menores
-        analysis_prompt = (
-            f"Analise esta mensagem e retorne um JSON.\n\n"
-            f"Mensagem: {user_text}\n\n"
-            f"Retorne no formato:\n"
-            f'{{"tipo": "CHAT ou Reclamação ou Denúncia ou Solicitação", '
-            f'"orgao": "nome do órgão ou null", '
-            f'"resumo_qualificado": "texto técnico ou null", '
-            f'"resposta_chat": "sua resposta"}}'
-        )
-
-        # Usa RAG para consultar a base de conhecimento
-        response = self.query_engine.query(analysis_prompt)
-        raw_response = response.response
-        
-        # Log da resposta completa para debug
         logger.info("="*50)
         logger.info(f"MENSAGEM DO USUÁRIO: {user_text}")
-        logger.info(f"RESPOSTA RAG (primeiros 500 chars): {raw_response[:500]}")
         
-        # Tenta extrair apenas o JSON da resposta
-        cleaned_response = self._extract_json_from_response(raw_response)
-        logger.info(f"RESPOSTA LIMPA: {cleaned_response[:300]}")
+        # Etapa 1: Classificar tipo
+        tipo = self._classify_type(user_text)
+        logger.info(f"TIPO CLASSIFICADO: {tipo}")
+        
+        # Se for CHAT, retorna resposta simples
+        if tipo == "CHAT":
+            resposta = self._generate_chat_response(user_text)
+            result = {
+                "tipo": "CHAT",
+                "orgao": None,
+                "resumo_qualificado": None,
+                "resposta_chat": resposta
+            }
+            logger.info(f"RESPOSTA CHAT: {resposta}")
+            logger.info("="*50)
+            return json.dumps(result, ensure_ascii=False)
+        
+        # Etapa 2: Identificar órgão
+        orgao = self._identify_organ(user_text)
+        logger.info(f"ÓRGÃO IDENTIFICADO: {orgao}")
+        
+        # Etapa 3: Gerar resumo curto
+        resumo = self._generate_summary(user_text, tipo)
+        logger.info(f"RESUMO: {resumo}")
+        
+        # Etapa 4: Gerar descrição técnica
+        resumo_tecnico = self._generate_technical_summary(user_text, tipo, orgao)
+        logger.info(f"RESUMO TÉCNICO: {resumo_tecnico[:100]}...")
+        
+        # Etapa 5: Gerar resposta de confirmação
+        resposta_confirmacao = f"Entendi. Vou classificar isso como {tipo}. Verifique os dados sugeridos abaixo."
+        
+        result = {
+            "tipo": tipo,
+            "orgao": orgao,
+            "resumo": resumo,
+            "resumo_qualificado": resumo_tecnico,
+            "resposta_chat": resposta_confirmacao
+        }
+        
         logger.info("="*50)
-        
-        return cleaned_response
+        return json.dumps(result, ensure_ascii=False)
     
-    def _extract_json_from_response(self, response: str) -> str:
-        """
-        Extrai apenas o JSON da resposta, removendo contexto extra.
-        """
-        import re
+    def _classify_type(self, user_text: str) -> str:
+        """Classifica o tipo da mensagem."""
+        prompt = (
+            f"Classifique esta mensagem em UMA categoria:\n\n"
+            f"Mensagem: {user_text}\n\n"
+            f"Categorias:\n"
+            f"- CHAT: saudações, perguntas gerais\n"
+            f"- Reclamação: problemas com serviços\n"
+            f"- Denúncia: irregularidades, corrupção\n"
+            f"- Solicitação: pedidos de informação ou serviços\n\n"
+            f"Responda APENAS com a categoria (uma palavra):"
+        )
         
-        # Tenta encontrar um objeto JSON na resposta
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response, re.DOTALL)
+        response = self.llm.complete(prompt)
+        tipo = self._clean_response(response.text)
         
-        if json_match:
-            json_str = json_match.group(0)
-            logger.info(f"JSON encontrado via regex: {json_str[:200]}")
-            return json_str
+        # Normaliza a resposta
+        if "reclamação" in tipo.lower() or "reclamacao" in tipo.lower():
+            return "Reclamação"
+        elif "denúncia" in tipo.lower() or "denuncia" in tipo.lower():
+            return "Denúncia"
+        elif "solicitação" in tipo.lower() or "solicitacao" in tipo.lower():
+            return "Solicitação"
+        else:
+            return "CHAT"
+    
+    def _identify_organ(self, user_text: str) -> str:
+        """Identifica o órgão responsável usando RAG."""
+        prompt = (
+            f"Qual órgão público é responsável por esta demanda?\n\n"
+            f"{user_text}\n\n"
+            f"Escolha um: Ministério da Saúde (MS), Ministério da Educação (MEC), "
+            f"Controladoria-Geral da União (CGU), INSS, Polícia Federal (PF), Receita Federal (RFB).\n"
+            f"Responda apenas com o nome:"
+        )
         
-        # Fallback: remove apenas o contexto mais óbvio
-        response = response.replace("Context information is below.", "")
-        response = re.sub(r'page_label:.*?file_path:.*?\.pdf\s*', '', response, flags=re.DOTALL)
-        response = re.sub(r'Given the context information.*?Query:', '', response, flags=re.DOTALL)
-        response = response.replace("Answer:", "").strip()
+        response = self.query_engine.query(prompt)
+        orgao = self._clean_response(response.response)
         
-        # Procura por { e pega dali até o }
-        start = response.find('{')
-        if start >= 0:
-            end = response.rfind('}')
-            if end > start:
-                cleaned = response[start:end+1]
-                logger.info(f"JSON encontrado por busca manual: {cleaned[:200]}")
-                return cleaned
+        # Se a resposta for muito longa, pega só as primeiras palavras
+        if len(orgao) > 100:
+            orgao = " ".join(orgao.split()[:6])
         
-        logger.warning("Nenhum JSON encontrado na resposta. Retornando resposta original.")
-        return response
+        # Normaliza nomes comuns
+        orgao_lower = orgao.lower()
+        if "saúde" in orgao_lower or "saude" in orgao_lower or "sus" in orgao_lower:
+            return "Ministério da Saúde (MS)"
+        elif "educação" in orgao_lower or "educacao" in orgao_lower or "mec" in orgao_lower:
+            return "Ministério da Educação (MEC)"
+        elif "cgu" in orgao_lower or "controladoria" in orgao_lower:
+            return "Controladoria-Geral da União (CGU)"
+        elif "inss" in orgao_lower or "previdência" in orgao_lower or "previdencia" in orgao_lower:
+            return "Instituto Nacional do Seguro Social (INSS)"
+        elif "polícia federal" in orgao_lower or "policia federal" in orgao_lower or " pf" in orgao_lower:
+            return "Polícia Federal (PF)"
+        elif "receita" in orgao_lower or "rfb" in orgao_lower:
+            return "Receita Federal (RFB)"
+        
+        return orgao if orgao else "Órgão não identificado"
+    
+    def _generate_summary(self, user_text: str, tipo: str) -> str:
+        """Gera um resumo curto (1 frase) da demanda."""
+        prompt = (
+            f"Resuma esta mensagem em UMA frase curta e direta:\n\n"
+            f"{user_text}\n\n"
+            f"Responda apenas com o resumo (máximo 10 palavras):"
+        )
+        
+        response = self.llm.complete(prompt)
+        resumo = self._clean_response(response.text)
+        
+        # Limita a 100 caracteres
+        if len(resumo) > 100:
+            resumo = resumo[:97] + "..."
+        
+        return resumo.strip()
+    
+    def _generate_technical_summary(self, user_text: str, tipo: str, orgao: str) -> str:
+        """Gera fundamentação/justificativa técnica profissional."""
+        prompt = (
+            f"Elabore uma fundamentação breve (2-3 frases) para esta demanda:\n\n"
+            f"{user_text}\n\n"
+            f"Explique apenas o motivo/justificativa legal para esta {tipo.lower()}. "
+            f"Use linguagem formal e objetiva. Sem JSON, sem títulos."
+        )
+        
+        response = self.query_engine.query(prompt)
+        cleaned = self._clean_response(response.response)
+        
+        # Remove estruturas JSON se ainda existirem
+        if '{' in cleaned and '}' in cleaned:
+            # Tenta extrair apenas o texto útil do JSON
+            json_match = re.search(r'"response":\s*"([^"]+)"', cleaned)
+            if json_match:
+                cleaned = json_match.group(1)
+            else:
+                # Remove chaves e deixa só o texto
+                cleaned = re.sub(r'[{}]', '', cleaned)
+                cleaned = re.sub(r'"[^"]+"\s*:\s*"', '', cleaned)
+                cleaned = cleaned.replace('"', '')
+        
+        # Limita a 300 caracteres
+        if len(cleaned) > 300:
+            cleaned = cleaned[:297] + "..."
+        
+        return cleaned.strip()
+    
+    def _generate_chat_response(self, user_text: str) -> str:
+        """Gera resposta conversacional para CHAT."""
+        prompt = (
+            f"Você é o assistente da ouvidoria Fala.BR.\n"
+            f"Responda de forma amigável e útil a esta mensagem:\n\n"
+            f"{user_text}\n\n"
+            f"Resposta:"
+        )
+        
+        response = self.llm.complete(prompt)
+        return self._clean_response(response.text)
+    
+    def _clean_response(self, text: str) -> str:
+        """Remove markdown code blocks e limpa a resposta."""
+        # Remove markdown code blocks
+        text = re.sub(r'```json\s*', '', text)
+        text = re.sub(r'```\s*', '', text)
+        
+        # Remove prefixos comuns
+        text = text.replace("Context information is below.", "")
+        text = text.replace("Given the context information", "")
+        text = text.replace("Answer:", "")
+        text = text.replace("Resposta:", "")
+        
+        # Remove informações de arquivo
+        text = re.sub(r'page_label:.*?file_path:.*?\.pdf\s*', '', text, flags=re.DOTALL)
+        
+        # Remove aspas extras no início/fim
+        text = text.strip()
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1]
+        
+        # Normaliza espaços mas mantém quebras de linha importantes
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        text = ' '.join(lines)
+        
+        return text
+    
