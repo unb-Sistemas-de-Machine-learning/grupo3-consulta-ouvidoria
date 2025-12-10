@@ -1,0 +1,64 @@
+services:
+  # Serviço Ollama (LLM Local)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ouvidoria-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    # Descomente se tiver GPU NVIDIA
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Serviço Streamlit (Aplicação Web)
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ouvidoria-app
+    ports:
+      - "8501:8501"
+    volumes:
+      # Monta o código para desenvolvimento (hot reload)
+      - ./:/app
+      # Persiste os dados do Qdrant
+      - qdrant_data:/app/qdrant_data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - PYTHONUNBUFFERED=1
+      - FORCE_REBUILD_INDEX=true
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Aguardando Ollama iniciar...' &&
+        sleep 5 &&
+        echo 'Baixando modelo gemma2:2b (1.6GB - leve para 8GB RAM)...' &&
+        curl -X POST http://ollama:11434/api/pull -d '{\"name\":\"gemma2:2b\"}' &&
+        echo 'Modelo pronto! Iniciando aplicação...' &&
+        streamlit run main.py 
+          --server.port=8501 
+          --server.address=0.0.0.0 
+          --server.runOnSave=true 
+          --server.fileWatcherType=poll
+      "
+
+volumes:
+  # Persiste os modelos do Ollama
+  ollama_data:
+    driver: local
+  # Persiste o banco vetorial
+  qdrant_data:
+    driver: local
+

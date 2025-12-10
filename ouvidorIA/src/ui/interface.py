@@ -21,11 +21,9 @@ class OuvidoriaUI:
         
         defaults = {
             "form_esfera": "Federal",
-            "form_orgao": "",
-            "form_assunto": "",
-            "form_resumo": "",
-            "form_conteudo": "",
-            "chat_open": False
+            "chat_open": False,
+            "pending_suggestion": None,  # Armazena sugestão antes de widgets serem criados
+            "apply_suggestion": False    # Flag para aplicar sugestão
         }
         for key, value in defaults.items():
             if key not in st.session_state:
@@ -60,31 +58,61 @@ class OuvidoriaUI:
         """, unsafe_allow_html=True)
 
     def render_form_section(self):
+        # Verifica se deve aplicar sugestão
+        if st.session_state.apply_suggestion and st.session_state.pending_suggestion:
+            sug = st.session_state.pending_suggestion
+            default_orgao = sug.get("orgao", "")
+            default_resumo = sug.get("resumo", "")
+            default_conteudo = sug.get("conteudo", "")
+            st.session_state.apply_suggestion = False  # Reset flag
+            st.success("✅ Formulário preenchido com sugestões do assistente!")
+        else:
+            default_orgao = ""
+            default_resumo = ""
+            default_conteudo = ""
+        
         st.markdown('<div class="form-section-title">Destinatário</div>', unsafe_allow_html=True)
         col1, col2 = st.columns([1, 2])
         with col1:
             st.selectbox("Esfera", ["Federal", "Estadual", "Municipal"], key="form_esfera")
         
         orgaos = ["", "Ministério da Saúde (MS)", "Ministério da Educação (MEC)", "Controladoria-Geral da União (CGU)", "Instituto Nacional do Seguro Social (INSS)", "Polícia Federal (PF)", "Receita Federal (RFB)"]
-        st.selectbox("Órgão destinatário", options=orgaos, key="form_orgao")
+        
+        # Define índice do órgão
+        orgao_index = 0
+        if default_orgao in orgaos:
+            orgao_index = orgaos.index(default_orgao)
+        
+        st.selectbox("Órgão destinatário", options=orgaos, index=orgao_index)
 
         st.markdown('<div class="form-section-title">Descrição</div>', unsafe_allow_html=True)
         st.selectbox("Sobre qual assunto você quer falar?", options=["", "Saúde", "Educação", "Segurança", "Transporte"], key="form_assunto")
-        st.text_input("Resumo", placeholder="Digite um breve resumo", key="form_resumo")
-        st.text_area("Fale aqui", height=250, placeholder="Descreva o conteúdo do pedido...", key="form_conteudo")
+        st.text_input("Resumo", placeholder="Digite um breve resumo", value=default_resumo)
+        st.text_area("Fale aqui", height=250, placeholder="Descreva o conteúdo do pedido...", value=default_conteudo)
 
         st.markdown("---")
         c1, c2, c3 = st.columns([1, 4, 1])
         with c3:
             st.button("Avançar →", type="primary", use_container_width=True)
 
-    def render_sidebar(self):
+    def render_sidebar(self, rag_service=None):
         with st.sidebar:
             st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/Gov.br_logo.svg/1200px-Gov.br_logo.svg.png", width=120)
-            st.header("⚙️ Configurações")
-            st.info(f"**Status: Conectado** 🟢\n\n🖥️ Server: `{AppConfig.OLLAMA_BASE_URL}`")
+            st.header("Configurações")
+            
+            # Status do sistema
+            st.info(f"**Status LLM:** Conectado\n\n**Modelo:** {AppConfig.OLLAMA_MODEL}")
+            
+            # Status do RAG
+            if rag_service:
+                index_info = rag_service.get_index_info()
+                if index_info.get("exists"):
+                    st.success("**RAG:** Base de conhecimento ativa")
+                else:
+                    st.warning("**RAG:** Sem documentos indexados")
+            
             st.divider()
-            uploaded_files = st.file_uploader("📚 Docs (Upload)", accept_multiple_files=True, type=['txt', 'pdf'])
+            uploaded_files = st.file_uploader("Carregar documentos", accept_multiple_files=True, type=['txt', 'pdf'])
             return uploaded_files
 
     def render_chat_interface(self, rag_service):
@@ -103,12 +131,28 @@ class OuvidoriaUI:
                         # Se o tipo for CHAT, não mostramos o widget de preenchimento
                         if sug and tipo != "CHAT":
                             with st.status(f"📝 Sugestão: {tipo}", expanded=True):
+                                st.write(f"**Tipo:** {tipo}")
                                 st.write(f"**Órgão:** {sug.get('orgao', 'N/A')}")
-                                st.text_area("Texto Técnico:", value=sug.get("resumo_qualificado", ""), height=150, disabled=True)
-                                if st.button("✅ Usar estes dados", key=f"btn_{msg.get('id', 0)}"):
-                                    st.session_state.form_orgao = sug.get("orgao", "")
-                                    st.session_state.form_conteudo = sug.get("resumo_qualificado", "")
-                                    st.session_state.form_resumo = f"{tipo} sobre {sug.get('orgao', '')}"
+                                st.write(f"**Resumo:** {tipo} sobre {sug.get('orgao', '')}")
+                                
+                                st.markdown("**Descrição técnica:**")
+                                st.text_area(
+                                    "texto_sugestao", 
+                                    value=sug.get("resumo_qualificado", ""), 
+                                    height=150, 
+                                    disabled=True,
+                                    label_visibility="collapsed",
+                                    key=f"sug_text_{msg.get('id', 0)}"
+                                )
+                                
+                                if st.button("Preencher Formulário", key=f"btn_{msg.get('id', 0)}", type="primary"):
+                                    # Armazena sugestão e ativa flag
+                                    st.session_state.pending_suggestion = {
+                                        "orgao": sug.get("orgao", ""),
+                                        "resumo": f"{tipo} sobre {sug.get('orgao', '')}",
+                                        "conteudo": sug.get("resumo_qualificado", "")
+                                    }
+                                    st.session_state.apply_suggestion = True
                                     st.rerun()
 
         if prompt := st.chat_input("Ex: Não consigo meu remédio no posto..."):
@@ -122,21 +166,37 @@ class OuvidoriaUI:
                 try:
                     raw_response = rag_service.analyze_demand(last_msg)
                     
-                    json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
+                    if not raw_response or len(raw_response.strip()) == 0:
+                        st.error("Resposta vazia do modelo. Tente novamente.")
+                        return
+                    
+                    # Limpa markdown code blocks se houver
+                    clean_response = re.sub(r'```json\s*|\s*```', '', raw_response).strip()
+                    
+                    # Tenta extrair JSON
+                    json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', clean_response, re.DOTALL)
                     suggestion = {}
-                    text_response = raw_response
+                    text_response = "Desculpe, não consegui processar sua mensagem. Tente novamente."
                     
                     if json_match:
+                        json_str = json_match.group(0)
                         try:
-                            suggestion = json.loads(json_match.group(0))
+                            suggestion = json.loads(json_str)
+                            
                             # Se for CHAT, usamos a resposta_chat do JSON como texto principal
-                            # Se for RELATO, criamos um texto de introdução para o widget
-                            if suggestion.get("tipo") == "CHAT":
+                            if suggestion.get("tipo", "").upper() == "CHAT":
                                 text_response = suggestion.get("resposta_chat", "Olá! Como posso ajudar?")
                             else:
-                                text_response = suggestion.get("resposta_chat", "Analisei seu caso. Veja a sugestão abaixo:")
-                        except: 
-                            pass # Se falhar o parse, mostra o texto cru (fallback)
+                                # Se for RELATO, criamos um texto de introdução para o widget
+                                text_response = suggestion.get("resposta_chat", "Analisei seu caso. Veja a sugestão de preenchimento abaixo:")
+                        except json.JSONDecodeError as je:
+                            st.error(f"Erro ao parsear JSON: {je}")
+                            st.error(f"JSON recebido: {json_str[:200]}")
+                            text_response = "Erro ao processar resposta. Tente reformular sua mensagem."
+                    else:
+                        st.warning("Nenhum JSON encontrado na resposta")
+                        st.text(f"Resposta recebida: {clean_response[:300]}")
+                        text_response = "Não consegui processar sua mensagem no formato esperado. Tente novamente."
                     
                     st.session_state.messages.append({
                         "role": "assistant", 
@@ -146,4 +206,6 @@ class OuvidoriaUI:
                     })
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Erro: {e}")
+                    st.error(f"Erro ao processar resposta: {e}")
+                    import traceback
+                    st.error(traceback.format_exc())

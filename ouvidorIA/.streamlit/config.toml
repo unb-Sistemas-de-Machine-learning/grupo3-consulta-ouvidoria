@@ -1,0 +1,33 @@
+[server]
+# Hot reload configuration
+runOnSave = true
+fileWatcherType = "poll"
+
+# Server configuration
+port = 8501
+address = "0.0.0.0"
+headless = true
+
+# Performance
+maxUploadSize = 200
+
+[browser]
+# Disable gathering usage stats
+gatherUsageStats = false
+
+[client]
+# Disable toolbar mode (cleaner UI)
+toolbarMode = "minimal"
+
+[theme]
+# Optional: Customize theme (uncomment to use)
+# primaryColor = "#28a745"
+# backgroundColor = "#FFFFFF"
+# secondaryBackgroundColor = "#F0F2F6"
+# textColor = "#262730"
+# font = "sans serif"
+
+[logger]
+# Set logging level
+level = "info"
+

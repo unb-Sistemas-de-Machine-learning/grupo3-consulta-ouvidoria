@@ -24,14 +24,24 @@ def main():
 
     # --- INDEXAÇÃO AUTOMÁTICA (Persistente) ---
     if "indexed" not in st.session_state:
-        # Spinner só aparece se demorar (ou seja, se for indexar do zero)
-        with st.spinner("Verificando base de conhecimento..."):
+        from config import AppConfig
+        
+        rebuild_msg = "Reconstruindo índice do zero..." if AppConfig.FORCE_REBUILD_INDEX else "Carregando base de conhecimento da ouvidoria..."
+        with st.spinner(rebuild_msg):
             try:
-                rag_service.ingest_and_index()
+                rag_service.ingest_and_index(force_rebuild=AppConfig.FORCE_REBUILD_INDEX)
                 st.session_state.indexed = True
-                # st.toast("Base pronta!", icon="✅") # Opcional: Feedback discreto
+                
+                # Mostra informação sobre o índice carregado
+                index_info = rag_service.get_index_info()
+                if index_info.get("exists"):
+                    rebuild_note = " (reconstruído)" if AppConfig.FORCE_REBUILD_INDEX else ""
+                    st.success(f"Base de conhecimento carregada{rebuild_note}. Documentos indexados.")
+                else:
+                    st.warning("Índice vazio. Adicione documentos na pasta data/raw/")
             except Exception as e:
                 st.error(f"Erro ao carregar base: {e}")
+                st.error("Verifique se existem arquivos PDF na pasta data/raw/")
 
     # --- LAYOUT PRINCIPAL ---
     if st.session_state.chat_open:
@@ -45,12 +55,24 @@ def main():
         ui.render_form_section()
         
         # Área administrativa para forçar atualização
-        with st.expander("Admin: Atualizar Manuais"):
-            files = st.file_uploader("Novos Manuais", accept_multiple_files=True)
-            if files and st.button("Forçar Reindexação"):
+        with st.expander("Admin: Gerenciar Base de Conhecimento"):
+            st.subheader("Reindexar documentos existentes")
+            if st.button("Reconstruir Índice", help="Reprocessa todos os PDFs em data/raw/"):
+                with st.spinner("Reconstruindo índice..."):
+                    rag_service.ingest_and_index(force_rebuild=True)
+                    st.success("Índice reconstruído com sucesso!")
+                    st.session_state.indexed = False
+                    st.rerun()
+            
+            st.divider()
+            st.subheader("Adicionar novos documentos")
+            files = st.file_uploader("Novos Manuais", accept_multiple_files=True, type=['pdf', 'txt'])
+            if files and st.button("Indexar Novos Arquivos"):
                 with st.spinner("Processando novos arquivos..."):
-                    rag_service.ingest_and_index(files)
-                    st.success("Base atualizada com sucesso!")
+                    rag_service.ingest_and_index(files, force_rebuild=True)
+                    st.success("Novos documentos indexados com sucesso!")
+                    st.session_state.indexed = False
+                    st.rerun()
 
     # RENDERIZA CHAT
     if st.session_state.chat_open:
