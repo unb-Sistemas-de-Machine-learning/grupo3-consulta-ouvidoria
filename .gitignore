@@ -1,1 +1,4 @@
-.venv/
+venv/
+*.cfg
+*.pyc
+qdrant_data/
