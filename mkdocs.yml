@@ -15,7 +15,10 @@ nav:
     - Requisitos: Elicitação/requisitos.md
     - Histórias de Usuário (US): Elicitação/historias-de-usuario.md
     - Priorização das US: Elicitação/priorizacao-us.md
-    - Cronograma: Elicitação/cronograma.md
+    - MVP e Cronograma: Elicitação/mvp-cronograma.md
+  - Engenharia de Dados:
+    - Arquitetura: Dados/arquitetura.md
+    - Coleta e Armazenamento de Dados: Dados/dados.md
     
 theme:
   name: material
