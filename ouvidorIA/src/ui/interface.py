@@ -1,7 +1,11 @@
 import streamlit as st
 import json
 import re
+import logging
+from typing import Dict, Any, List
 from config import AppConfig
+
+logger = logging.getLogger(__name__)
 
 class OuvidoriaUI:
     def __init__(self):
@@ -130,7 +134,7 @@ class OuvidoriaUI:
         with c3:
             st.button("Avançar →", type="primary", use_container_width=True)
 
-    def render_sidebar(self, rag_service=None):
+    def render_sidebar(self, api_client=None):
         with st.sidebar:
             st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/Gov.br_logo.svg/1200px-Gov.br_logo.svg.png", width=120)
             st.header("Configurações")
@@ -139,18 +143,21 @@ class OuvidoriaUI:
             st.info(f"**Status LLM:** Conectado\n\n**Modelo:** {AppConfig.OLLAMA_MODEL}")
             
             # Status do RAG
-            if rag_service:
-                index_info = rag_service.get_index_info()
-                if index_info.get("exists"):
-                    st.success("**RAG:** Base de conhecimento ativa")
-                else:
-                    st.warning("**RAG:** Sem documentos indexados")
+            if api_client:
+                try:
+                    index_info = api_client.get_index_info()
+                    if index_info.get("exists"):
+                        st.success("**RAG:** Base de conhecimento ativa")
+                    else:
+                        st.warning("**RAG:** Sem documentos indexados")
+                except Exception as e:
+                    st.error(f"**RAG:** Erro ao conectar com API: {e}")
             
             st.divider()
             uploaded_files = st.file_uploader("Carregar documentos", accept_multiple_files=True, type=['txt', 'pdf'])
             return uploaded_files
 
-    def render_chat_interface(self, rag_service):
+    def render_chat_interface(self, api_client):
         st.markdown("### 🤖 OuvidorIA")
         chat_container = st.container(height=600)
         with chat_container:
@@ -184,10 +191,10 @@ class OuvidoriaUI:
                                     height=150, 
                                     disabled=True,
                                     label_visibility="collapsed",
-                                    key=f"sug_text_{msg.get('id', 0)}"
+                                    key=f"sug_text_{len(st.session_state.messages)}"
                                 )
                                 
-                                if st.button("Preencher Formulário", key=f"btn_{msg.get('id', 0)}", type="primary"):
+                                if st.button("Preencher Formulário", key=f"btn_{len(st.session_state.messages)}", type="primary"):
                                     # Armazena sugestão e ativa flag
                                     st.session_state.pending_suggestion = {
                                         "esfera": esfera,
@@ -201,62 +208,66 @@ class OuvidoriaUI:
                                     st.rerun()
 
         if prompt := st.chat_input("Ex: Não consigo meu remédio no posto..."):
-            st.session_state.messages.append({"role": "user", "content": prompt, "id": len(st.session_state.messages)})
+            st.session_state.messages.append({
+                "role": "user", 
+                "content": prompt
+            })
             st.session_state.processing_message = True
             st.rerun()
 
-    def process_new_message(self, rag_service):
-        # Só processa se a flag estiver ativa e última mensagem for do usuário
-        if not st.session_state.get("processing_message", False):
+    def process_new_message(self, api_client):
+        """Process new user messages synchronously."""
+        # Find the last user message that doesn't have a response yet
+        messages = st.session_state.messages
+        if not messages:
             return
         
-        if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-            st.session_state.processing_message = False  # Desativa a flag imediatamente
-            last_msg = st.session_state.messages[-1]["content"]
-            with st.spinner("OuvidorIA pensando..."):
-                try:
-                    raw_response = rag_service.analyze_demand(last_msg)
-                    
-                    if not raw_response or len(raw_response.strip()) == 0:
-                        st.error("Resposta vazia do modelo. Tente novamente.")
-                        return
-                    
-                    # Limpa markdown code blocks se houver
-                    clean_response = re.sub(r'```json\s*|\s*```', '', raw_response).strip()
-                    
-                    # Tenta extrair JSON
-                    json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', clean_response, re.DOTALL)
-                    suggestion = {}
-                    text_response = "Desculpe, não consegui processar sua mensagem. Tente novamente."
-                    
-                    if json_match:
-                        json_str = json_match.group(0)
-                        try:
-                            suggestion = json.loads(json_str)
-                            
-                            # Se for CHAT, usamos a resposta_chat do JSON como texto principal
-                            if suggestion.get("tipo", "").upper() == "CHAT":
-                                text_response = suggestion.get("resposta_chat", "Olá! Como posso ajudar?")
-                            else:
-                                # Se for RELATO, criamos um texto de introdução para o widget
-                                text_response = suggestion.get("resposta_chat", "Analisei seu caso. Veja a sugestão de preenchimento abaixo:")
-                        except json.JSONDecodeError as je:
-                            st.error(f"Erro ao parsear JSON: {je}")
-                            st.error(f"JSON recebido: {json_str[:200]}")
-                            text_response = "Erro ao processar resposta. Tente reformular sua mensagem."
-                    else:
-                        st.warning("Nenhum JSON encontrado na resposta")
-                        st.text(f"Resposta recebida: {clean_response[:300]}")
-                        text_response = "Não consegui processar sua mensagem no formato esperado. Tente novamente."
-                    
-                    st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": text_response, 
-                        "suggestion": suggestion,
-                        "id": len(st.session_state.messages)
-                    })
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao processar resposta: {e}")
-                    import traceback
-                    st.error(traceback.format_exc())
+        # Check if the last message is from user and doesn't have a response
+        last_msg = messages[-1]
+        if last_msg["role"] == "user" and st.session_state.processing_message:
+            user_text = last_msg["content"]
+            logger.info(f"Processing user message: {user_text[:50]}...")
+            
+            try:
+                # Show spinner while processing
+                with st.spinner("OuvidorIA está pensando..."):
+                    # Make synchronous API call
+                    result = api_client.analyze_demand(user_text)
+                
+                # Extract data from API response
+                suggestion = {
+                    "tipo": result.get("tipo", ""),
+                    "orgao": result.get("orgao"),
+                    "resumo": result.get("resumo"),
+                    "resumo_qualificado": result.get("resumo_qualificado"),
+                    "resposta_chat": result.get("resposta_chat", "")
+                }
+                
+                # Se for CHAT, usamos a resposta_chat como texto principal
+                if suggestion.get("tipo", "").upper() == "CHAT":
+                    text_response = suggestion.get("resposta_chat", "Olá! Como posso ajudar?")
+                else:
+                    # Se for RELATO, criamos um texto de introdução para o widget
+                    text_response = suggestion.get("resposta_chat", "Analisei seu caso. Veja a sugestão de preenchimento abaixo:")
+                
+                # Add assistant response
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": text_response, 
+                    "suggestion": suggestion
+                })
+                
+                st.session_state.processing_message = False
+                logger.info("Message processed successfully")
+                st.rerun()
+                
+            except Exception as e:
+                logger.error(f"Error processing message: {e}", exc_info=True)
+                st.error(f"Erro ao processar mensagem: {e}")
+                st.session_state.processing_message = False
+                # Add error message
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": f"Desculpe, ocorreu um erro ao processar sua mensagem: {str(e)}"
+                })
+                st.rerun()

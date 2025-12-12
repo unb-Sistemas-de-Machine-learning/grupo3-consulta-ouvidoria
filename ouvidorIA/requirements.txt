@@ -4,3 +4,9 @@ llama-index-llms-ollama
 llama-index-embeddings-huggingface
 llama-index-vector-stores-qdrant
 qdrant-client
+fastapi
+uvicorn[standard]
+python-multipart
+requests
+httpx
+pydantic

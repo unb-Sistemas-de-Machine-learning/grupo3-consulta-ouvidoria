@@ -30,3 +30,9 @@ class AppConfig:
     
     # Force rebuild da base vetorial (útil para desenvolvimento ou atualização de documentos)
     FORCE_REBUILD_INDEX: bool = os.getenv("FORCE_REBUILD_INDEX", "false").lower() == "true"
+    
+    # --- ETL CONFIGURATION ---
+    # Run ETL processes before API initialization
+    RUN_ETL_ON_STARTUP: bool = os.getenv("RUN_ETL_ON_STARTUP", "true").lower() == "true"
+    # ETL pipelines to run on startup (comma-separated list of extractor names)
+    ETL_PIPELINES: str = os.getenv("ETL_PIPELINES", "")

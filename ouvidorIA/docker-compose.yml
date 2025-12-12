@@ -22,7 +22,37 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  # Serviço Streamlit (Aplicação Web)
+  # Serviço FastAPI (Backend RAG)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ouvidoria-api
+    ports:
+      - "8000:8000"
+    volumes:
+      # Monta o código para desenvolvimento (hot reload)
+      - ./:/app
+      # Persiste os dados do Qdrant
+      - qdrant_data:/app/qdrant_data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - PYTHONUNBUFFERED=1
+      - FORCE_REBUILD_INDEX=false
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Aguardando Ollama iniciar...' &&
+        sleep 10 &&
+        echo 'Baixando modelo gemma2:2b (1.6GB - leve para 8GB RAM)...' &&
+        curl -X POST http://ollama:11434/api/pull -d '{\"name\":\"gemma2:2b\"}' &&
+        echo 'Modelo pronto! Iniciando API...' &&
+        uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
+      "
+
+  # Serviço Streamlit (Frontend)
   streamlit:
     build:
       context: .
@@ -33,20 +63,16 @@ services:
     volumes:
       # Monta o código para desenvolvimento (hot reload)
       - ./:/app
-      # Persiste os dados do Qdrant
-      - qdrant_data:/app/qdrant_data
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - API_BASE_URL=http://api:8000
       - PYTHONUNBUFFERED=1
-      - FORCE_REBUILD_INDEX=true
+    depends_on:
+      - api
     restart: unless-stopped
     command: >
       sh -c "
-        echo 'Aguardando Ollama iniciar...' &&
+        echo 'Aguardando API iniciar...' &&
         sleep 5 &&
-        echo 'Baixando modelo gemma2:2b (1.6GB - leve para 8GB RAM)...' &&
-        curl -X POST http://ollama:11434/api/pull -d '{\"name\":\"gemma2:2b\"}' &&
-        echo 'Modelo pronto! Iniciando aplicação...' &&
         streamlit run main.py 
           --server.port=8501 
           --server.address=0.0.0.0 
