@@ -2,7 +2,6 @@
 ETL Processor for extracting, transforming, and loading documents.
 Handles web scraping, file conversion, and integration with document ingestion.
 """
-import os
 import logging
 from typing import List, Dict, Any, Optional, Callable
 from pathlib import Path
@@ -12,6 +11,7 @@ import json
 from src.etl.exceptions import DocumentProcessingError, ETLProcessError
 from src.etl.loader import DocumentLoader, FileWrapper
 from src.etl.scraper import Scraper, WikiSource
+from src.etl.store import ETLState
 
 logger = logging.getLogger(__name__)
 
@@ -23,25 +23,31 @@ class ETLProcessor:
     
     def __init__(
         self,
-        output_dir: Optional[str] = None,
+        base_dir: str = "data",
         document_loader: Optional[DocumentLoader] = None
     ):
         """
         Initialize ETL Processor.
         
         Args:
-            output_dir: Directory where processed files will be saved. 
-                       Defaults to data/processed/
+            base_dir: Directory where files will be saved. 
+                       Defaults to data/
             document_loader: Optional DocumentLoader instance for auto-ingestion
         """
-        self.output_dir = Path(output_dir) if output_dir else Path("data/processed")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.base_dir = Path(base_dir)
+        self.raw_dir = self.base_dir / "raw"
+        self.processed_dir = self.base_dir / "processed"
         
+        self.raw_dir.mkdir(parents=True, exist_ok=True)
+        self.processed_dir.mkdir(parents=True, exist_ok=True)
+
+        self.state_manager = ETLState(self.base_dir / "etl_history.json")
+
         self.document_loader = document_loader or DocumentLoader()
         self.extractors: Dict[str, Callable] = {}
         self.transformers: Dict[str, Callable] = {}
         
-        logger.info(f"ETLProcessor initialized with output_dir: {self.output_dir}")
+        logger.info(f"ETLProcessor initialized with base_dir: {self.base_dir}")
     
     def register_extractor(self, name: str, extractor_func: Callable):
         """
@@ -128,25 +134,10 @@ class ETLProcessor:
         except Exception as e:
             logger.error(f"Error in transformer '{transformer_name}': {e}")
             raise ETLProcessError(f"Transformation failed: {e}") from e
-    
-    def save_processed_file(
-        self,
-        file_wrapper: FileWrapper,
-        filename: Optional[str] = None
-    ) -> Path:
-        """
-        Save a processed file to the output directory.
-        
-        Args:
-            file_wrapper: FileWrapper with processed content
-            filename: Optional custom filename. If None, uses file_wrapper.name
-        
-        Returns:
-            Path to saved file
-        """
-        filename = filename or file_wrapper.name
-        file_path = self.output_dir / filename
-        
+
+    def save_file(self, file_wrapper: FileWrapper, target_dir: Path) -> Path:
+
+        file_path = target_dir / file_wrapper.name
         with open(file_path, "wb") as f:
             f.write(file_wrapper.getbuffer())
         return file_path
@@ -157,6 +148,7 @@ class ETLProcessor:
         transformer_name: Optional[str] = None,
         auto_ingest: bool = True,
         save_files: bool = True,
+        force_update: bool = False,
         extractor_args: Optional[Dict] = None,
         transformer_args: Optional[Dict] = None
     ) -> Dict[str, Any]:
@@ -168,6 +160,7 @@ class ETLProcessor:
             transformer_name: Optional transformer name. If None, skips transformation
             auto_ingest: If True, automatically ingest processed files into RAG system
             save_files: If True, save processed files to output directory
+            force_update: If True, re-processes all raw files
             extractor_args: Optional dict of arguments for extractor
             transformer_args: Optional dict of arguments for transformer
         
@@ -194,12 +187,47 @@ class ETLProcessor:
             # Step 1: Extract
             extracted_items = self.extract(extractor_name, **extractor_args)
             logger.info(f"Extracted {len(extracted_items)} item(s)")
+
+            if not isinstance(extracted_items, list): extracted_items = [extracted_items]
             
+            items_to_process = []
+            skipped_count = 0
+
+            for item in extracted_items:
+                if not isinstance(item, FileWrapper): continue
+                
+                content_bytes = item.getbuffer()
+                new_hash = self.state_manager.compute_content_hash(content_bytes)
+                
+                last_hash = self.state_manager.get_hash(item.name)
+                
+                if not force_update and last_hash == new_hash:
+                    logger.info(f"⏭️  Skipping '{item.name}' (No changes detected)")
+                    skipped_count += 1
+                    continue
+                
+                if last_hash != new_hash:
+                    logger.info(f"🔄 Content changed for '{item.name}'. Queuing for processing.")
+                else:
+                    logger.info(f"🆕 New content '{item.name}'. Queuing for processing.")
+                
+                self.state_manager.update_hash(item.name, new_hash)
+                
+                if save_files:
+                    self.save_file(item, self.raw_dir)
+                
+                items_to_process.append(item)
+
+            # Se não tem nada novo, paramos aqui
+            if not items_to_process:
+                logger.info("✅ No changes in any source. Pipeline finished.")
+                return {'success': True, 'processed_count': 0, 'skipped_count': skipped_count}
+
             processed_files = []
             file_wrappers = []
             
             # Step 2: Transform (if transformer specified)
-            for item in extracted_items:
+            for item in items_to_process:
                 if transformer_name:
                     transformed = self.transform(transformer_name, item, **transformer_args)
                 else:
@@ -223,7 +251,7 @@ class ETLProcessor:
                 
                 # Step 3: Save files (if requested)
                 if save_files:
-                    saved_path = self.save_processed_file(file_wrapper)
+                    saved_path = self.save_file(file_wrapper, self.processed_dir)
                     processed_files.append(str(saved_path))
                 
                 file_wrappers.append(file_wrapper)
@@ -241,6 +269,9 @@ class ETLProcessor:
                     logger.error(f"Auto-ingestion failed: {e}")
                     ingested = False
             
+            # Step 5: Save state of contents if sucess in pipeline
+            self.state_manager.save_state()
+
             result = {
                 'success': True,
                 'extracted_count': len(extracted_items),

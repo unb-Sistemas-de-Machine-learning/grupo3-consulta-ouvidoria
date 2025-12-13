@@ -24,3 +24,7 @@ class InvalidFileTypeError(DocumentLoaderError):
 class ETLProcessError(Exception):
     """Base exception for ETL process errors."""
     pass
+
+class ETLStateError(Exception):
+    """Base exception for ETL State errors."""
+    pass
