@@ -1,24 +1,18 @@
 import requests
+import logging
+import json
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
-import logging
-import json
 
-# Configuração básica de log para ver o que está acontecendo
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# --- 1. Definição da Exceção (para não precisar importar de src) ---
-class DocumentProcessingError(Exception):
-    """Erro customizado para falhas no processamento."""
-    pass
+from src.etl.exceptions import DocumentProcessingError
 
 @dataclass
 class WikiSource:
     name: str
     url: str
 
+logger = logging.getLogger(__name__)
 
 class Scraper:
     """

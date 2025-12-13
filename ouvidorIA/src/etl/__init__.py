@@ -4,7 +4,7 @@ from src.etl.loader import DocumentLoader, FileWrapper
 from src.etl.processor import ETLProcessor
 from src.etl.startup import run_startup_etl, parse_etl_pipelines_config
 from src.etl.qdrant_builder import build_qdrant_index_from_data
-from src.etl.scraper import Scraper, extract_multiple_wikis
+from src.etl.scraper import Scraper, WikiSource
 from src.etl.exceptions import (
     DocumentLoaderError,
     NoDocumentsFoundError,
@@ -21,7 +21,7 @@ __all__ = [
     'parse_etl_pipelines_config',
     'build_qdrant_index_from_data',
     'Scraper',
-    'extract_multiple_wikis',
+    'WikiSource',
     'DocumentLoaderError',
     'NoDocumentsFoundError',
     'DocumentProcessingError',
