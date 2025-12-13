@@ -19,6 +19,8 @@ nav:
   - Engenharia de Dados:
     - Arquitetura: Dados/arquitetura.md
     - Coleta e Armazenamento de Dados: Dados/dados.md
+  - Resultados:
+    - Resultados: Resultados/resultados.md
     
 theme:
   name: material
