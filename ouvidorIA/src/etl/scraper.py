@@ -1,6 +1,7 @@
 import requests
 import logging
-import json
+import copy
+import re
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
@@ -30,7 +31,7 @@ class Scraper:
     ]
 
     # HTML tags to extract
-    INTEREST_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'pre', 'table', 'div', 'dl', 'dt', 'dd']
+    INTEREST_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'pre', 'table', 'div', 'dl', 'dt', 'dd', 'a']
     
     # Header hierarchy mapping
     HEADER_LEVELS = {'h1': 1, 'h2': 2, 'h3': 3, 'h4': 4, 'h5': 5, 'h6': 6}
@@ -46,6 +47,27 @@ class Scraper:
         self.headers = headers or {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
+
+    def _extract_text(self, element) -> str:
+        """
+        Extract text from element
+        - converts <a> tags for Markdown format [Text](Link)
+        """
+        element_copy = copy.copy(element)
+        
+        for link in element_copy.find_all('a', href=True):
+            text = link.get_text(strip=True)
+            href = link['href']
+            
+            if not text or href.startswith('#') or 'javascript:' in href:
+                continue
+            
+            markdown_link = f" [{text}]({href}) "
+            link.replace_with(markdown_link)
+
+        raw_text = element_copy.get_text(separator=' ', strip=True)
+        clean_text = re.sub(r'\s+', ' ', raw_text).strip()
+        return clean_text
 
     def extract(self, wiki: WikiSource) -> Dict[str, Any]:
         """
@@ -129,7 +151,7 @@ class Scraper:
                 if block_level is None and len(stack) > 1:
 
                     if element.name in ['p', 'li']:
-                        text = element.get_text(strip=True)
+                        text = self._extract_text(element)
                         if text:
                             current_node = stack[-1]['data']
                             # Append to existing content or start new
@@ -152,14 +174,3 @@ class Scraper:
             results.append(data)
 
         return results
-
-if __name__ == "__main__":
-    scraper = Scraper()
-    lista_de_wikis = [
-        WikiSource(name="FalaBR - Modulo Ouvidoria", url="https://wiki.cgu.gov.br/index.php?title=Fala.BR_-_M%C3%B3dulo_Ouvidoria"),
-        WikiSource(name="FalaBR - Modulo LAI", url="https://wiki.cgu.gov.br/index.php?title=Manual_do_Usu%C3%A1rio")
-    ]
-    
-    # This returns the exact JSON structure requested
-    final_json_list = scraper.extract_multiple_wikis(lista_de_wikis)
-    print(json.dumps(final_json_list, indent=2, ensure_ascii=False))
