@@ -3,9 +3,16 @@ from bs4 import BeautifulSoup
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 import logging
-from src.etl.exceptions import DocumentProcessingError
+import json
 
+# Configuração básica de log para ver o que está acontecendo
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# --- 1. Definição da Exceção (para não precisar importar de src) ---
+class DocumentProcessingError(Exception):
+    """Erro customizado para falhas no processamento."""
+    pass
 
 @dataclass
 class WikiSource:
@@ -21,6 +28,7 @@ class Scraper:
 
     # Default terms to ignore (ignores the topic AND its children)
     DEFAULT_BLACKLIST = [
+        "Ouvidoria",
         "Configurações (Gestor/Cadastrador/Administrador)",
         "Integração Fala.BR e outros sistemas",
         "Dúvidas, Suporte Técnico do Sistema e Sugestões",
@@ -59,7 +67,7 @@ class Scraper:
             logger.error(f"Error extracting {wiki.url}: {e}")
             raise DocumentProcessingError(f"Failed to fetch {wiki.url}: {e}") from e
         
-        content_div = soup.find('main') or soup.find(id='content') or soup.find(id='mw-content-text') or soup.body
+        content_div = soup.find('div', id="mw-content-text")
         
         if not content_div:
             error_msg = f"Conteúdo principal não encontrado para: {wiki.name}"
@@ -73,12 +81,13 @@ class Scraper:
         # State for blocking blacklisted sections
         block_level = None 
 
-        for element in content_div.find_all(self.INTEREST_TAGS, recursive=False):
+        for element in content_div.find_all(self.INTEREST_TAGS):
             
             # --- Handling Headers (Structure) ---
             if element.name in self.HEADER_LEVELS:
                 level = self.HEADER_LEVELS[element.name]
-                title_text = element.get_text(strip=True)
+                headline_span = element.find('span', class_='mw-headline')
+                title_text = headline_span.get_text(strip=True)
 
                 if not title_text:
                     continue
@@ -124,13 +133,14 @@ class Scraper:
             else:
                 # Only add content if not blocked and strictly inside a section (stack > 0)
                 if block_level is None and len(stack) > 1:
-                    text = element.get_text(separator=' ', strip=True)
-                    if text:
-                        current_node = stack[-1]['data']
-                        # Append to existing content or start new
-                        current_node['content'] = (current_node.get('content', '') + "\n" + text).strip()
 
-        # Construct final object for this URL
+                    if element.name in ['p', 'li']:
+                        text = element.get_text(strip=True)
+                        if text:
+                            current_node = stack[-1]['data']
+                            # Append to existing content or start new
+                            current_node['content'] = (current_node.get('content', '') + "\n" + text).strip()
+
         return {
             "wiki_name": wiki.name,
             "wiki_url": wiki.url,
@@ -152,11 +162,10 @@ class Scraper:
 if __name__ == "__main__":
     scraper = Scraper()
     lista_de_wikis = [
-        WikiSource(name="FalaBR - Modulo Ouvidoria", url="https://wiki.cgu.gov.br/index.php?title=Fala.BR_-_M%C3%B3dulo_Ouvidoria")
+        WikiSource(name="FalaBR - Modulo Ouvidoria", url="https://wiki.cgu.gov.br/index.php?title=Fala.BR_-_M%C3%B3dulo_Ouvidoria"),
+        WikiSource(name="FalaBR - Modulo LAI", url="https://wiki.cgu.gov.br/index.php?title=Manual_do_Usu%C3%A1rio")
     ]
     
     # This returns the exact JSON structure requested
     final_json_list = scraper.extract_multiple_wikis(lista_de_wikis)
-    
-    import json
     print(json.dumps(final_json_list, indent=2, ensure_ascii=False))
