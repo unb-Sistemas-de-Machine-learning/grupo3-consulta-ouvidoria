@@ -97,8 +97,10 @@ def run_startup_etl(
     etl_processor = ETLProcessor(document_loader=document_loader)
     
     # Register built-in extractors and transformers
-    from src.etl.processor import web_scraper_extractor, file_converter_transformer
+    from src.etl.processor import web_scraper_extractor, file_converter_transformer, wiki_json_transformer
+    
     etl_processor.register_extractor("web_scraper", web_scraper_extractor)
+    etl_processor.register_transformer("wiki_json", wiki_json_transformer)
     etl_processor.register_transformer("file_converter", file_converter_transformer)
     
     # Parse ETL configuration

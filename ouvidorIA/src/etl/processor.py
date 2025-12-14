@@ -2,18 +2,18 @@
 ETL Processor for extracting, transforming, and loading documents.
 Handles web scraping, file conversion, and integration with document ingestion.
 """
-import os
 import logging
 from typing import List, Dict, Any, Optional, Callable
 from pathlib import Path
-from datetime import datetime
+from llama_index.core.node_parser import SentenceSplitter
 import json
 
 from src.etl.exceptions import DocumentProcessingError, ETLProcessError
 from src.etl.loader import DocumentLoader, FileWrapper
+from src.etl.scraper import Scraper, WikiSource
+from src.etl.store import ETLState
 
 logger = logging.getLogger(__name__)
-
 
 class ETLProcessor:
     """
@@ -23,25 +23,31 @@ class ETLProcessor:
     
     def __init__(
         self,
-        output_dir: Optional[str] = None,
+        base_dir: str = "data",
         document_loader: Optional[DocumentLoader] = None
     ):
         """
         Initialize ETL Processor.
         
         Args:
-            output_dir: Directory where processed files will be saved. 
-                       Defaults to data/processed/
+            base_dir: Directory where files will be saved. 
+                       Defaults to data/
             document_loader: Optional DocumentLoader instance for auto-ingestion
         """
-        self.output_dir = Path(output_dir) if output_dir else Path("data/processed")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.base_dir = Path(base_dir)
+        self.raw_dir = self.base_dir / "raw"
+        self.processed_dir = self.base_dir / "processed"
         
+        self.raw_dir.mkdir(parents=True, exist_ok=True)
+        self.processed_dir.mkdir(parents=True, exist_ok=True)
+
+        self.state_manager = ETLState(self.base_dir / "etl_history.json")
+
         self.document_loader = document_loader or DocumentLoader()
         self.extractors: Dict[str, Callable] = {}
         self.transformers: Dict[str, Callable] = {}
         
-        logger.info(f"ETLProcessor initialized with output_dir: {self.output_dir}")
+        logger.info(f"ETLProcessor initialized with base_dir: {self.base_dir}")
     
     def register_extractor(self, name: str, extractor_func: Callable):
         """
@@ -128,29 +134,12 @@ class ETLProcessor:
         except Exception as e:
             logger.error(f"Error in transformer '{transformer_name}': {e}")
             raise ETLProcessError(f"Transformation failed: {e}") from e
-    
-    def save_processed_file(
-        self,
-        file_wrapper: FileWrapper,
-        filename: Optional[str] = None
-    ) -> Path:
-        """
-        Save a processed file to the output directory.
-        
-        Args:
-            file_wrapper: FileWrapper with processed content
-            filename: Optional custom filename. If None, uses file_wrapper.name
-        
-        Returns:
-            Path to saved file
-        """
-        filename = filename or file_wrapper.name
-        file_path = self.output_dir / filename
-        
+
+    def save_file(self, file_wrapper: FileWrapper, target_dir: Path) -> Path:
+
+        file_path = target_dir / file_wrapper.name
         with open(file_path, "wb") as f:
             f.write(file_wrapper.getbuffer())
-        
-        logger.info(f"Saved processed file: {file_path}")
         return file_path
     
     def run_pipeline(
@@ -159,6 +148,7 @@ class ETLProcessor:
         transformer_name: Optional[str] = None,
         auto_ingest: bool = True,
         save_files: bool = True,
+        force_update: bool = False,
         extractor_args: Optional[Dict] = None,
         transformer_args: Optional[Dict] = None
     ) -> Dict[str, Any]:
@@ -170,6 +160,7 @@ class ETLProcessor:
             transformer_name: Optional transformer name. If None, skips transformation
             auto_ingest: If True, automatically ingest processed files into RAG system
             save_files: If True, save processed files to output directory
+            force_update: If True, re-processes all raw files
             extractor_args: Optional dict of arguments for extractor
             transformer_args: Optional dict of arguments for transformer
         
@@ -196,12 +187,47 @@ class ETLProcessor:
             # Step 1: Extract
             extracted_items = self.extract(extractor_name, **extractor_args)
             logger.info(f"Extracted {len(extracted_items)} item(s)")
+
+            if not isinstance(extracted_items, list): extracted_items = [extracted_items]
             
+            items_to_process = []
+            skipped_count = 0
+
+            for item in extracted_items:
+                if not isinstance(item, FileWrapper): continue
+                
+                content_bytes = item.getbuffer()
+                new_hash = self.state_manager.compute_content_hash(content_bytes)
+                
+                last_hash = self.state_manager.get_hash(item.name)
+                
+                if not force_update and last_hash == new_hash:
+                    logger.info(f"⏭️  Skipping '{item.name}' (No changes detected)")
+                    skipped_count += 1
+                    continue
+                
+                if last_hash != new_hash:
+                    logger.info(f"🔄 Content changed for '{item.name}'. Queuing for processing.")
+                else:
+                    logger.info(f"🆕 New content '{item.name}'. Queuing for processing.")
+                
+                self.state_manager.update_hash(item.name, new_hash)
+                
+                if save_files:
+                    self.save_file(item, self.raw_dir)
+                
+                items_to_process.append(item)
+
+            # Se não tem nada novo, paramos aqui
+            if not items_to_process:
+                logger.info("✅ No changes in any source. Pipeline finished.")
+                return {'success': True, 'processed_count': 0, 'skipped_count': skipped_count}
+
             processed_files = []
             file_wrappers = []
             
             # Step 2: Transform (if transformer specified)
-            for item in extracted_items:
+            for item in items_to_process:
                 if transformer_name:
                     transformed = self.transform(transformer_name, item, **transformer_args)
                 else:
@@ -225,7 +251,7 @@ class ETLProcessor:
                 
                 # Step 3: Save files (if requested)
                 if save_files:
-                    saved_path = self.save_processed_file(file_wrapper)
+                    saved_path = self.save_file(file_wrapper, self.processed_dir)
                     processed_files.append(str(saved_path))
                 
                 file_wrappers.append(file_wrapper)
@@ -243,6 +269,9 @@ class ETLProcessor:
                     logger.error(f"Auto-ingestion failed: {e}")
                     ingested = False
             
+            # Step 5: Save state of contents if sucess in pipeline
+            self.state_manager.save_state()
+
             result = {
                 'success': True,
                 'extracted_count': len(extracted_items),
@@ -277,23 +306,117 @@ class ETLProcessor:
 
 # Built-in extractors and transformers
 
-def web_scraper_extractor(urls: List[str], output_format: str = "pdf") -> List[FileWrapper]:
+def web_scraper_extractor(items: List[Dict[str, str]]) -> List[FileWrapper]:
     """
-    Example web scraper extractor.
-    This is a placeholder - implement actual scraping logic as needed.
+    Extract data from Wikis and return raw JSONs like FileWrappers.
     
     Args:
-        urls: List of URLs to scrape
-        output_format: Output format ('pdf' or 'txt')
-    
-    Returns:
-        List of FileWrapper objects with scraped content
+        items: List of dictionaries containing wiki's data (name and url) 
     """
-    logger.info(f"Web scraper: Scraping {len(urls)} URL(s)")
-    # TODO: Implement actual web scraping logic
-    # For now, return empty list
-    logger.warning("Web scraper not implemented - returning empty list")
-    return []
+    scraper = Scraper()
+    sources = []
+    
+    logger.info(f"Web scraper started for {len(items)} itens.")
+
+    for entry in items:
+        if not isinstance(entry, dict) or 'url' not in entry:
+            logger.warning(f"Invalid item ignored (missing url or not a dict): {entry}")
+            continue
+            
+        name = entry.get('name', 'Unknown_Wiki')
+        url = entry.get('url')
+        
+        # Cria o objeto WikiSource que o Scraper espera internamente
+        sources.append(WikiSource(name=name, url=url))
+    
+    if not sources:
+        logger.warning("Nenhuma fonte válida para processar.")
+        return []
+    
+    try:
+        results_data = scraper.extract_multiple_wikis(sources)
+        
+        output_files = []
+        for data in results_data:
+            json_content = json.dumps(data, indent=2, ensure_ascii=False).encode('utf-8')
+            
+            safe_name = data['wiki_name'].replace(" ", "_").replace("/", "-")
+            filename = f"{safe_name}.json"
+            output_files.append(FileWrapper(name=filename, content=json_content))
+
+        return output_files
+        
+    except Exception as e:
+        logger.error(f"Erro fatal no scraper: {e}")
+        raise ETLProcessError(f"Web scraping failed: {e}") from e
+
+def wiki_json_transformer(
+    input_data: Any, 
+    chunk_size: int = 1024,
+    chunk_overlap: int = 200
+) -> FileWrapper:
+    """
+    Transforms JSON structed format to linear text using LlamaIndex.
+    """
+    
+    data = None
+    if isinstance(input_data, FileWrapper):
+        data = json.loads(input_data.getbuffer().decode('utf-8'))
+    elif isinstance(input_data, dict):
+        data = input_data
+    else:
+        raise ETLProcessError(f"Invalid entry: {type(input_data)}")
+
+    wiki_name = data.get('wiki_name', 'Wiki')
+    output_lines = []
+
+    text_splitter = SentenceSplitter(
+        chunk_size=chunk_size, 
+        chunk_overlap=chunk_overlap
+    )
+
+    def process_node(node, context_path):
+        title = node.get('title', '')
+        content = node.get('content', '').strip()
+        
+        current_path = context_path + [title] if title else context_path
+        breadcrumb_str = " > ".join(current_path)
+        
+        if content:
+            text_chunks = text_splitter.split_text(content)
+            
+            for i, chunk in enumerate(text_chunks):
+                header = f"## Contexto: {breadcrumb_str}"
+                
+                if len(text_chunks) > 1:
+                    header += f" (Parte {i+1}/{len(text_chunks)})"
+                
+                formatted_block = f"{header}\n{chunk}\n"
+                output_lines.append(formatted_block)
+                output_lines.append("-" * 40) 
+
+        # Recursão para filhos
+        children = node.get('sections', []) + node.get('topics', [])
+        for child in children:
+            process_node(child, current_path)
+
+    logger.info(f"Transforming Wiki '{wiki_name}' with Lhamaindex ({chunk_size} tokens)")
+    
+    # Executa
+    if 'sections' in data:
+        for section in data['sections']:
+            process_node(section, [wiki_name])
+    else:
+        process_node(data, [wiki_name])
+
+    final_text = "\n".join(output_lines)
+    safe_name = wiki_name.replace(" ", "_")
+    
+    return FileWrapper(
+        name=f"{safe_name}_processed.txt", 
+        content=final_text.encode('utf-8')
+    )
+
 
 
 def file_converter_transformer(input_path: str, output_format: str = "pdf") -> FileWrapper:

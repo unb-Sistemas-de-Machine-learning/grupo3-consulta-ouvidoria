@@ -2,26 +2,33 @@
 
 from src.etl.loader import DocumentLoader, FileWrapper
 from src.etl.processor import ETLProcessor
+from src.etl.store import ETLState
 from src.etl.startup import run_startup_etl, parse_etl_pipelines_config
 from src.etl.qdrant_builder import build_qdrant_index_from_data
+from src.etl.scraper import Scraper, WikiSource
 from src.etl.exceptions import (
     DocumentLoaderError,
     NoDocumentsFoundError,
     DocumentProcessingError,
     InvalidFileTypeError,
-    ETLProcessError
+    ETLProcessError,
+    ETLStateError
 )
 
 __all__ = [
     'DocumentLoader',
     'FileWrapper',
     'ETLProcessor',
+    'ETLState',
     'run_startup_etl',
     'parse_etl_pipelines_config',
     'build_qdrant_index_from_data',
+    'Scraper',
+    'WikiSource',
     'DocumentLoaderError',
     'NoDocumentsFoundError',
     'DocumentProcessingError',
     'InvalidFileTypeError',
     'ETLProcessError',
+    'ETLStateError'
 ]

@@ -2,18 +2,20 @@
   {
     "name": "web_scraper_pipeline",
     "extractor": "web_scraper",
-    "transformer": "file_converter",
+    "transformer":"wiki_json",
     "auto_ingest": false,
     "save_files": true,
     "extractor_args": {
-      "urls": [
-        "https://example.com/manual1",
-        "https://example.com/manual2"
-      ],
-      "output_format": "pdf"
-    },
-    "transformer_args": {
-      "output_format": "pdf"
+      "items": [
+        {
+          "name": "Wiki_name1",
+          "url": "https://example.com/manual1"
+        },
+        {
+          "name": "Wiki_name2",
+          "url": "https://example.com/manual2"
+        }
+      ]
     }
   }
 ]
