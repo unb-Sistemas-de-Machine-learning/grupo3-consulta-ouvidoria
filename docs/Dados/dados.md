@@ -8,112 +8,125 @@ vetorial e as decisões de engenharia de features adotadas pelo projeto.
 - **Fala.BR (wiki / módulos):** páginas e documentos que descrevem tipos de manifestação
 	e procedimentos. Objetivo: extrair módulos relacionados a pedidos de acesso à informação
 	e manifestações correlatas.
-- **Portais do Governo (atribuições / funções):** páginas oficiais que listam as funções
-	e competências dos órgãos federais (ex.: páginas em gov.br ou perfis institucionais).
+- **Documentos Governamentais:** documentos em formato PDF sobre leis/decretos, cartilhas, manuais, entre outros com informações sobre Ouvidoria Pública e a plataforma FalaBR.
 - **Uploads de usuários:** arquivos PDF/TXT enviados pela interface web.
-- **Arquivos locais:** `ouvidorIA/data/raw/` (documentos fonte) e `ouvidorIA/data/processed/`
+
+
+**Arquivos locais:** `ouvidorIA/data/raw/` (documentos fonte) e `ouvidorIA/data/processed/`
 	(artefatos de ETL).
 
-### Observações de conformidade
 
-- Sempre respeitar `robots.txt` e limites de uso das APIs/portais ao fazer scraping.
-- Registrar a origem (URL, timestamp) como metadado para cada documento coletado.
+## Pipeline de Dados com ETL
 
-## Pipeline de Coleta e ETL
+Foi utilizado o processo de ETL para estruturação da pipeline de dados, pois os dados do projeto podem vir de fontes diversas (PDF, scraping, planilhas...).
 
-1. **Coleta / Scraping (concluído)**
-	 - Observação: os scrapers para Fala.BR e para portais de órgãos já foram executados e
-		 os resultados salvos em `ouvidorIA/data/raw/` e `ouvidorIA/data/processed/`.
-	 - Caso seja necessário atualizar o dataset, reexecute os scrapers com cautela (respeitar
-		 `robots.txt` e limites de uso) e armazene os artefatos em `data/raw/` (para novos
-		 uploads) ou `data/processed/` (artefatos de ETL).
-<!--	 - Frequência sugerida de atualização: conforme necessidade (semanal, quinzenal ou sob demanda). -->
+1.**Extract (Extração)**
 
-2. **Limpeza e Normalização**
-	 - Remover HTML desnecessário, normalizar acentuação, unificar formatos de datas e
-		 campos de contato.
-	 - Extrair metadados: `source_url`, `collected_at`, `doc_type`, `orgao` (quando aplicável).
+Nessa fase é realizada o scrapping das wikis do FalaBR, gerando uma estrutura JSON hierárquica baseado nos tópicos da wiki.
 
-3. **Chunking e Preparação para Embeddings**
-	 - Dividir texto em chunks (ex.: 500 tokens / ~200-400 palavras) com overlap (10-20%) para
-		 preservar contexto entre pedaços.
-<!--	 - Incluir `metadata` por chunk: `source`, `page`, `orgao`, `topic`. -->
+Algumas funcionalidades dessa fase são:
+ 
+ * Blacklist de tópicos que não são extraídos, pois não são relevantes para o contexto da IA;
+ * Links `<a>` são convertidos para formato Markdown (`[link](url)`) para melhor leitura pela LLM;
+ * Utilização de hashing (MD5) no conteúdo extraído, assim somente os conteúdos que forem sendo alterados (hash diferente) são enviados para transformação e ingestão da LLM;
+ * O contéudo extraído é salvo em `ouvidorIA/data/raw/` para fins de backup e auditoria.
 
-4. **Geração de Embeddings**
-	 - Modelo de embeddings: configurável via `AppConfig.EMBED_MODEL_NAME` (ex.: Sentence-Transformers
-		 multilingual model). Gerado com `HuggingFaceEmbedding` (LlamaIndex).
+2.**Transform (Transformação)**
 
-5. **Armazenamento Vetorial (Qdrant)**
+Preparação dos dados coletados no scrapping para serem indexados no Banco Vetorial.
+
+Técnicas aplicadas:
+
+* **Flattening**: Transformação da árvore hierárquica do JSON em uma lista linear de tópicos. 
+
+* **Breadcrumbs (Contexto)**: É adicionado o "caminho" no início de cada texto (ex: Wiki Ouvidoria > Ouvidoria > Prazos) para mapear a hierarquia dos tópicos, auxiliando na indexação e consumo pela LLM.
+
+* **Chunking**: Fatiamento de textos longos em pedaços menores usando sobreposição (overlap) para que as frases não sejam cortadas ao meio ou percam o contexto.
+
+Os dados são salvos em formato TXT em `ouvidorIA/data/processed/` para serem indexados no Banco Vetorial.
+
+3.**Load (Carregamento)**
+
+A fase final consiste no Embedding dos dados e salvamento no Banco Vetorial (Qdrant). O carregamento "puxa" os documentos fonte em formato PDF e TXT presentes em `ouvidorIA/data/raw/` e os dados processados de `ouvidorIA/data/processed/`.
+
+* **Geração de Embeddings**: O modelo de embeddings pode ser configurado via `AppConfig.EMBED_MODEL_NAME` (ex.: Sentence-Transformers multilingual model). No projeto, foi utilizado o `HuggingFaceEmbedding` do LlamaIndex.
+
+* **Armazenamento Vetorial (Qdrant)**:
 	 - Vetores e payloads persistidos em Qdrant (pasta local `qdrant_data` em Docker).
 	 - Indexação feita via `VectorStoreIndex.from_documents(...)` (LlamaIndex) e armazenada
 		 na coleção definida por `AppConfig.COLLECTION_NAME`.
 
-6. **Criação do Query Engine (RAG)**
-	 - O índice vetorial é utilizado pelo `query_engine` que combina recuperação (R) com
-		 geração (G) via o LLM (Ollama). O LLM é conectado antes de criar o query engine.
 
 ## Estrutura e Formatos de Armazenamento
 
-- Diretórios principais:
-	- `ouvidorIA/data/raw/` — documentos fonte (PDF, TXT, MD)
-	- `ouvidorIA/data/processed/` — saídas ETL (TXT/MD limpos)
-	- `qdrant_data/` — dados persistidos do Qdrant (volume Docker)
-- Metadados por documento/chunk: `source_url`, `collected_at`, `doc_type`, `orgao`, `topic`, `hash`.
+### Diretórios principais
+- `ouvidorIA/data/raw/` — documentos fonte (PDF, TXT, JSON)
+- `ouvidorIA/data/processed/` — saídas ETL (TXT limpo)
+- `qdrant_data/` — dados persistidos do Qdrant (volume Docker)
 
-## Tipos de Manifestação e Funções dos Órgãos (conteúdo para RAG)
+### JSON hierárquico (Scrapping)
 
-Objetivo: produzir textos explicativos e estruturados para alimentar a base de conhecimento
-e melhorar a indicação de campos no formulário.
+* `sections`: contém todos os tópicos da wiki
+* `topics`: faz a lógica de hierarquia dos tópicos, relacionando tópicos maiores com seus sub-tópicos
 
-- **Tipos de manifestação** (exemplos e descrições curtas):
-	- **Solicitação / Pedido de Informação**: pedido formal de acesso a documentos públicos.
-	- **Reclamação**: manifestação sobre falha/insatisfação na prestação de serviço.
-	- **Denúncia**: relato de irregularidade ou ilegalidade que pode exigir apuração.
-	- **Sugestão / Elogio**: manifestações não adversas, para melhoria ou reconhecimento.
+Exemplo: 
+```json
+{
+	"wiki_name": "Wiki_Name",
+	"wiki_url":"https://wiki.com/example",
+	"version": "1.0",
+	"sections": [
+	  {
+      "title": "Title 1",
+      "content": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+      "topics": [ 
+        {
+          "title": "Subtitle 1",
+          "content": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+          "topics": [
+            ...
+          ]
+        },
+        {
+          "title": "Subtitle 2",
+          "content": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+          "topics": [
+            ...
+          ]
+        }
+	    ]
+		},
+    {
+      "title": "Title 2",
+	    "content": "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+	    "topics": [
+        ...
+      ]
+    },
+    ...
+	]
+}
+```
 
-- **Funções dos órgãos (federais)**:
-	- Para cada órgão incluir: `nome`, `missão`, `principais atribuições` e `exemplos de assuntos`
-	- Exemplo: `Ministério da Saúde (MS)` — missão: formular políticas de saúde; atribuições:
-		coordenação do SUS, vigilância sanitária, etc.
+### Arquivos de Texto (TXT) de dados processados
 
-Esses textos devem ser armazenados como documentos (MD/TXT) e indexados para que o RAG
-use esse contexto na hora de identificar órgãos e sugerir campos.
+  * `## Contexto`: representa o "caminho" hierárquico (breadcrumbs), achatando a estrutura do JSON para dar contexto semântico imediato ao fragmento de texto.
 
-## Integração com o Frontend (campos `assunto` e `órgão`)
+  * Separador (`---`): delimita os chunks (blocos de texto) que serão vetorizados individualmente, garantindo a segmentação correta para o banco vetorial.
 
-- Fonte dos dados: preferir APIs oficiais (Fala.BR) quando disponíveis; caso contrário,
-	usar dataset extraído por scrapers e disponibilizado como JSON estático em `ouvidorIA/data/`.
-<!-- - Implementação sugerida:
-	- Servir arquivo `data/assuntos.json` e `data/orgaos.json` lidos pelo frontend na inicialização
-		(cache em sessão e atualização periódica).
-	- Alternativa: chamadas dinâmicas à API do Fala.BR com cache local e fallback para o arquivo
-		estático quando offline. -->
+Exemplo:
+```
+## Contexto: Title 1 > Subtitle 1
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vivamus lacinia odio vitae vestibulum vestibulum. 
+Cras sed felis eget velit aliquet. Aliquam lorem ante, dapibus in, viverra quis, feugiat a, tellus.
 
-## LLM / Prompting — Quando preencher campo vs responder chat
+----------------------------------------
+## Contexto: Title 1 > Subtitle 1 > Subtitle 1.1
+Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci velit. Suspendisse potenti. 
+Utle enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
 
-- Fluxo atual: `analyze_demand()` → `_classify_type()` → se `CHAT` retorna resposta;
-	senão segue para identificação de órgão e geração de resumos.
-- Problema observado: o LLM tende a sempre tentar preencher campos.
-
-## Métricas de Sucesso e Monitoramento
-
-- **Precisão de preenchimento**: % de campos sugeridos corretamente avaliados por auditoria manual.
-- **Recall de recuperação**: fraction de documentos relevantes que aparecem nas respostas RAG.
-- **Acurácia de identificação de órgão**: % de vezes que o órgão sugerido está correto.
-- **Latência (p50/p95/p99)**: medição do tempo desde a pergunta até a resposta final.
-- **Satisfação do usuário**: NPS / escala 1-5 após interação (se coletado).
-- **Frescor do índice**: tempo desde a última atualização/coleção de dados.
-
-<!--
-## Como adicionar novos dados e reindexar
-
-1. Para adicionar novos dados ou atualizações (inclusive novo scraping), coloque os arquivos
-	(PDF/TXT/MD/JSON) em `ouvidorIA/data/raw/` ou em `ouvidorIA/data/processed/`.
-2. Para reindexar do zero e garantir que os novos dados entrem no índice persistente do Qdrant,
-	reinicie a aplicação com `FORCE_REBUILD_INDEX=true` (ex.: em Docker Compose) ou chame a
-	função `ingest_and_index(force_rebuild=True)` na instância do `OuvidoriaRAGService`.
-3. Recomenda-se incluir metadados para cada documento/artefato: `source_url`, `collected_at`,
-	`doc_type`, `orgao` e `hash`. Isso ajuda na deduplicação e auditoria.
-4. Se os scrapers forem reexecutados, mantenha controle de versão dos arquivos coletados e
-	valide as diferenças antes de reindexar (scripts de comparação por `hash`/checksum são úteis).
--->
+----------------------------------------
+## Contexto: Title 1 > Subtitle 2
+Ut ultrices ultrices enim. Curabitur sit amet mauris. Morbi in dui quis est pulvinar ullamcorper. 
+Nulla facilisi. Integer lacinia sollicitudin massa. Cras metus. Sed aliquet risus a tortor.
+```

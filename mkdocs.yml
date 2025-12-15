@@ -19,6 +19,7 @@ nav:
   - Engenharia de Dados:
     - Arquitetura: Dados/arquitetura.md
     - Coleta e Armazenamento de Dados: Dados/dados.md
+    - Métricas: Dados/metricas.md
   - Resultados:
     - Resultados: Resultados/resultados.md
     
